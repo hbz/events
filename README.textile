@@ -1,0 +1,7 @@
+h1. About
+
+This is the initial draft of a simple web service for handling events like those sent by "GitHub Webhooks":https://developer.github.com/webhooks/
+
+h1. License
+
+GNU General Public License, version 2: "http://www.gnu.org/licenses/gpl-2.0.html":http://www.gnu.org/licenses/gpl-2.0.html
