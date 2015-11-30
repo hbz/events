@@ -1,5 +1,8 @@
 package controllers;
 
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -46,16 +49,36 @@ public class Application extends Controller {
 	 */
 	@BodyParser.Of(Json.class)
 	public Result addEvent(String type) {
-		Logger.info(String.format("POST event, type: %s", type));
+		JsonNode jsonRequestBody = request().body().asJson();
+		String headerString = request().headers().keySet().stream()
+				.map(k -> String.format("%s: %s", k, request().getHeader(k)))
+				.collect(Collectors.joining(", "));
+		Logger.debug("POST event, type: {}, headers: {}, body: {}", type,
+				headerString, jsonRequestBody);
 		try {
-			JsonNode jsonNode = request().body().asJson();
-			Logger.info(new ObjectMapper().writerWithDefaultPrettyPrinter()
-					.writeValueAsString(jsonNode));
-			return ok(jsonNode);
+			return ok(processRequest(jsonRequestBody));
 		} catch (JsonProcessingException e) {
 			e.printStackTrace();
 			return internalServerError(e.getMessage());
 		}
+	}
+
+	private static JsonNode processRequest(JsonNode jsonNode)
+			throws JsonProcessingException {
+		String gitHubEventType = request().getHeader("X-GitHub-Event");
+		if (gitHubEventType != null) {
+			switch (gitHubEventType) {
+			case "issues":
+				String jsonString = new ObjectMapper().writerWithDefaultPrettyPrinter()
+						.writeValueAsString(jsonNode);
+				Logger.info("GitHub issues event: \n{}", jsonString);
+				break;
+			default:
+				Logger.info("X-GitHub-Event: {}", gitHubEventType);
+				break;
+			}
+		}
+		return jsonNode;
 	}
 
 }
