@@ -1,6 +1,8 @@
 package controllers;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import play.*;
 import play.mvc.*;
@@ -25,11 +27,16 @@ public class Application extends Controller {
 
 	@BodyParser.Of(Json.class)
 	public Result addEvent(String type) {
-		JsonNode json = request().body().asJson();
-		String message =
-				String.format("POST event, type: %s, content: %s", type, json);
-		Logger.info(message);
-		return ok(message);
+		Logger.info(String.format("POST event, type: %s", type));
+		try {
+			JsonNode jsonNode = request().body().asJson();
+			Logger.info(new ObjectMapper().writerWithDefaultPrettyPrinter()
+					.writeValueAsString(jsonNode));
+			return ok(jsonNode);
+		} catch (JsonProcessingException e) {
+			e.printStackTrace();
+			return internalServerError(e.getMessage());
+		}
 	}
 
 }
