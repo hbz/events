@@ -113,6 +113,10 @@ public class Application extends Controller {
 				Path path = backupPathForType(type);
 				try (BufferedWriter writer = Files.newBufferedWriter(path)) {
 					writer.write(json.toString());
+					Logger.info("Wrote backup to: {}", path.toAbsolutePath());
+				} catch (Exception e) {
+					e.printStackTrace();
+					Logger.error("Could not write to: {}", path);
 				}
 				return json;
 			}
@@ -123,8 +127,7 @@ public class Application extends Controller {
 
 	private static Path backupPathForType(String type) {
 		String basePath = Play.application().path().getAbsolutePath();
-		Path path = Paths
-				.get(String.format("%s/public/data/backup-%s.json", basePath, type));
+		Path path = Paths.get(String.format("%s/backup-%s.json", basePath, type));
 		return path;
 	}
 
