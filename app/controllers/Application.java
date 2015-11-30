@@ -57,7 +57,8 @@ public class Application extends Controller {
 	public Result getBackup(String type) {
 		Path path = backupPathForType(type);
 		try {
-			return ok(Json.parse(path.toUri().toURL().openStream()));
+			response().setContentType("application/json");
+			return ok(prettyPrint(Json.parse(path.toUri().toURL().openStream())));
 		} catch (Exception e) {
 			e.printStackTrace();
 			return internalServerError(e.getMessage());
@@ -90,8 +91,7 @@ public class Application extends Controller {
 		if (gitHubEventType != null) {
 			switch (gitHubEventType) {
 			case "issues":
-				String jsonString = new ObjectMapper().writerWithDefaultPrettyPrinter()
-						.writeValueAsString(jsonNode);
+				String jsonString = prettyPrint(jsonNode);
 				Logger.info("GitHub issues event: \n{}", jsonString);
 				backupIssues(jsonNode, type);
 				break;
@@ -101,6 +101,12 @@ public class Application extends Controller {
 			}
 		}
 		return jsonNode;
+	}
+
+	private static String prettyPrint(JsonNode jsonNode)
+			throws JsonProcessingException {
+		return new ObjectMapper().writerWithDefaultPrettyPrinter()
+				.writeValueAsString(jsonNode);
 	}
 
 	private static void backupIssues(JsonNode jsonNode, String type) {
