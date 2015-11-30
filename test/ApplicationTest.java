@@ -22,6 +22,7 @@ import static org.junit.Assert.*;
 /**
  * https://www.playframework.com/documentation/2.4.x/JavaTest
  */
+@SuppressWarnings("javadoc")
 public class ApplicationTest {
 
 	@Test
