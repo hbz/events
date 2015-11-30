@@ -1,5 +1,10 @@
 package controllers;
 
+import java.io.BufferedWriter;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -8,8 +13,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import play.*;
+import play.libs.F.Promise;
+import play.libs.Json;
+import play.libs.ws.WS;
 import play.mvc.*;
-import play.mvc.BodyParser.Json;
 import views.html.*;
 
 /**
@@ -45,9 +52,23 @@ public class Application extends Controller {
 
 	/**
 	 * @param type The event type
+	 * @return A backup for the given event type
+	 */
+	public Result getBackup(String type) {
+		Path path = backupPathForType(type);
+		try {
+			return ok(Json.parse(path.toUri().toURL().openStream()));
+		} catch (Exception e) {
+			e.printStackTrace();
+			return internalServerError(e.getMessage());
+		}
+	}
+
+	/**
+	 * @param type The event type
 	 * @return The posted JSON request, if we processed it
 	 */
-	@BodyParser.Of(Json.class)
+	@BodyParser.Of(play.mvc.BodyParser.Json.class)
 	public Result addEvent(String type) {
 		JsonNode jsonRequestBody = request().body().asJson();
 		String headerString = request().headers().keySet().stream()
@@ -56,14 +77,14 @@ public class Application extends Controller {
 		Logger.debug("POST event, type: {}, headers: {}, body: {}", type,
 				headerString, jsonRequestBody);
 		try {
-			return ok(processRequest(jsonRequestBody));
+			return ok(processRequest(jsonRequestBody, type));
 		} catch (JsonProcessingException e) {
 			e.printStackTrace();
 			return internalServerError(e.getMessage());
 		}
 	}
 
-	private static JsonNode processRequest(JsonNode jsonNode)
+	private static JsonNode processRequest(JsonNode jsonNode, String type)
 			throws JsonProcessingException {
 		String gitHubEventType = request().getHeader("X-GitHub-Event");
 		if (gitHubEventType != null) {
@@ -72,13 +93,39 @@ public class Application extends Controller {
 				String jsonString = new ObjectMapper().writerWithDefaultPrettyPrinter()
 						.writeValueAsString(jsonNode);
 				Logger.info("GitHub issues event: \n{}", jsonString);
+				backupIssues(jsonNode, type);
 				break;
 			default:
-				Logger.info("X-GitHub-Event: {}", gitHubEventType);
+				Logger.info("Unhandeled X-GitHub-Event: {}", gitHubEventType);
 				break;
 			}
 		}
 		return jsonNode;
+	}
+
+	private static void backupIssues(JsonNode jsonNode, String type) {
+		String backupUrl = jsonNode.get("repository").get("issues_url").textValue()
+				.replace("{/number}", "");
+		WS.url(backupUrl).setQueryParameter("state", "all").get().map(response -> {
+			if (response.getStatus() == OK) {
+				JsonNode json = response.asJson();
+				Logger.debug("Backup: {}", json.toString());
+				Path path = backupPathForType(type);
+				try (BufferedWriter writer = Files.newBufferedWriter(path)) {
+					writer.write(json.toString());
+				}
+				return json;
+			}
+			Logger.warn("Failed backup request to URL: {}", backupUrl);
+			return null;
+		});
+	}
+
+	private static Path backupPathForType(String type) {
+		String basePath = Play.application().path().getAbsolutePath();
+		Path path = Paths
+				.get(String.format("%s/public/data/backup-%s.json", basePath, type));
+		return path;
 	}
 
 }

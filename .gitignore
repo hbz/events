@@ -6,3 +6,4 @@ bin
 /.classpath
 /.project
 /RUNNING_PID
+public/data/backup-*.json
