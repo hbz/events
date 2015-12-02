@@ -5,12 +5,15 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Iterator;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import play.*;
 import play.libs.F.Promise;
@@ -110,12 +113,41 @@ public class Application extends Controller {
 	}
 
 	private static void backupIssues(JsonNode jsonNode, String type) {
-		String backupUrl = jsonNode.get("repository").get("issues_url").textValue()
+		String issuesUrl = jsonNode.get("repository").get("issues_url").textValue()
 				.replace("{/number}", "");
-		WS.url(backupUrl).setQueryParameter("state", "all").get().map(response -> {
-			if (response.getStatus() == OK) {
-				JsonNode json = response.asJson();
-				Logger.debug("Backup: {}", json.toString());
+		Logger.debug("Getting issues from: {}", issuesUrl);
+		Promise<JsonNode> issues = WS.url(issuesUrl)
+				.setQueryParameter("state", "all").get().map(response -> {
+					if (response.getStatus() == OK) {
+						JsonNode json = response.asJson();
+						return json;
+					}
+					Logger.warn("Failed backup issues request to URL: {}", issuesUrl);
+					return Json.newArray();
+				});
+		issues.flatMap(json -> {
+			Iterable<JsonNode> iterable = () -> json.elements();
+			Stream<JsonNode> stream =
+					StreamSupport.stream(iterable.spliterator(), false);
+			Stream<Promise<Object>> comments = stream.map(node -> {
+				if (node.isObject()) {
+					ObjectNode objectNode = (ObjectNode) node;
+					String commentsUrl = objectNode.get("comments_url").asText();
+					Logger.debug("Getting comments from: {}", commentsUrl);
+					return WS.url(commentsUrl).get().map(commentsResponse -> {
+						if (commentsResponse.getStatus() == OK) {
+							JsonNode commentsJson = commentsResponse.asJson();
+							objectNode.set("comments_data", commentsJson);
+							return commentsJson;
+						}
+						Logger.warn("Failed backup comments request to URL: {}",
+								commentsUrl);
+						return Promise.pure(Json.newArray());
+					});
+				}
+				return Promise.pure(Json.newArray());
+			});
+			Promise.sequence(comments.collect(Collectors.toList())).onRedeem(vals -> {
 				Path path = backupPathForType(type);
 				try (BufferedWriter writer = Files.newBufferedWriter(path)) {
 					writer.write(json.toString());
@@ -124,10 +156,8 @@ public class Application extends Controller {
 					e.printStackTrace();
 					Logger.error("Could not write to: {}", path);
 				}
-				return json;
-			}
-			Logger.warn("Failed backup request to URL: {}", backupUrl);
-			return null;
+			});
+			return Promise.pure(Json.newObject());
 		});
 	}
 
