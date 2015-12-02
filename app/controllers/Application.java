@@ -1,6 +1,7 @@
 package controllers;
 
 import java.io.BufferedWriter;
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -14,6 +15,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.typesafe.config.Config;
+import com.typesafe.config.ConfigFactory;
 
 import play.*;
 import play.libs.F.Promise;
@@ -26,6 +29,13 @@ import views.html.*;
  * @author Fabian Steeg (fsteeg)
  */
 public class Application extends Controller {
+
+	private static final Config CONFIG =
+			ConfigFactory.parseFile(new File("conf/application.conf")).resolve();
+	private static final String GITHUB_AUTH_TOKEN =
+			CONFIG.getString("github.auth.token");
+	private static final String GITHUB_USER_AGENT =
+			CONFIG.getString("github.user.agent");
 
 	/**
 	 * @param path The path to redirect to
@@ -116,15 +126,17 @@ public class Application extends Controller {
 		String issuesUrl = jsonNode.get("repository").get("issues_url").textValue()
 				.replace("{/number}", "");
 		Logger.debug("Getting issues from: {}", issuesUrl);
-		Promise<JsonNode> issues = WS.url(issuesUrl)
-				.setQueryParameter("state", "all").get().map(response -> {
-					if (response.getStatus() == OK) {
-						JsonNode json = response.asJson();
-						return json;
-					}
-					Logger.warn("Failed backup issues request to URL: {}", issuesUrl);
-					return Json.newArray();
-				});
+		Promise<JsonNode> issues =
+				WS.url(issuesUrl).setHeader(USER_AGENT, GITHUB_USER_AGENT)
+						.setHeader(AUTHORIZATION, "token " + GITHUB_AUTH_TOKEN)
+						.setQueryParameter("state", "all").get().map(response -> {
+							if (response.getStatus() == OK) {
+								JsonNode json = response.asJson();
+								return json;
+							}
+							Logger.warn("Failed backup issues request to URL: {}", issuesUrl);
+							return Json.newArray();
+						});
 		issues.flatMap(json -> {
 			Iterable<JsonNode> iterable = () -> json.elements();
 			Stream<JsonNode> stream =
@@ -134,7 +146,9 @@ public class Application extends Controller {
 					ObjectNode objectNode = (ObjectNode) node;
 					String commentsUrl = objectNode.get("comments_url").asText();
 					Logger.debug("Getting comments from: {}", commentsUrl);
-					return WS.url(commentsUrl).get().map(commentsResponse -> {
+					return WS.url(commentsUrl).setHeader(USER_AGENT, GITHUB_USER_AGENT)
+							.setHeader(AUTHORIZATION, "token " + GITHUB_AUTH_TOKEN).get()
+							.map(commentsResponse -> {
 						if (commentsResponse.getStatus() == OK) {
 							JsonNode commentsJson = commentsResponse.asJson();
 							objectNode.set("comments_data", commentsJson);
