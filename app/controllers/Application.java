@@ -104,6 +104,7 @@ public class Application extends Controller {
 		if (gitHubEventType != null) {
 			switch (gitHubEventType) {
 			case "issues":
+			case "issue_comment":
 				String jsonString = prettyPrint(jsonNode);
 				Logger.info("GitHub issues event: \n{}", jsonString);
 				backupIssues(jsonNode, type);
