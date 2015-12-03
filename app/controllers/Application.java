@@ -21,7 +21,13 @@ import com.typesafe.config.ConfigFactory;
 import play.*;
 import play.libs.F.Promise;
 import play.libs.Json;
+import play.libs.oauth.OAuth;
+import play.libs.oauth.OAuth.ConsumerKey;
+import play.libs.oauth.OAuth.OAuthCalculator;
+import play.libs.oauth.OAuth.RequestToken;
 import play.libs.ws.WS;
+import play.libs.ws.WSRequest;
+import play.libs.ws.WSResponse;
 import play.mvc.*;
 import views.html.*;
 
@@ -36,6 +42,9 @@ public class Application extends Controller {
 			CONFIG.getString("github.auth.token");
 	private static final String GITHUB_USER_AGENT =
 			CONFIG.getString("github.user.agent");
+
+	private static final int SHORT_LINK_LENGTH =
+			"https://t.co/DNR4C93fmb".length();
 
 	/**
 	 * @param path The path to redirect to
@@ -104,10 +113,18 @@ public class Application extends Controller {
 		if (gitHubEventType != null) {
 			switch (gitHubEventType) {
 			case "issues":
-			case "issue_comment":
-				String jsonString = prettyPrint(jsonNode);
-				Logger.info("GitHub issues event: \n{}", jsonString);
+				logEvent(jsonNode, gitHubEventType);
 				backupIssues(jsonNode, type);
+				if (jsonNode.get("action").asText().equals("opened")) {
+					tweet(createNewIssueTweetText(jsonNode));
+				}
+				break;
+			case "issue_comment":
+				logEvent(jsonNode, gitHubEventType);
+				backupIssues(jsonNode, type);
+				if (jsonNode.get("action").asText().equals("created")) {
+					tweet(createNewCommentTweetText(jsonNode));
+				}
 				break;
 			default:
 				Logger.info("Unhandeled X-GitHub-Event: {}", gitHubEventType);
@@ -115,6 +132,12 @@ public class Application extends Controller {
 			}
 		}
 		return jsonNode;
+	}
+
+	private static void logEvent(JsonNode jsonNode, String gitHubEventType)
+			throws JsonProcessingException {
+		String jsonString = prettyPrint(jsonNode);
+		Logger.info("GitHub {} event: \n{}", gitHubEventType, jsonString);
 	}
 
 	private static String prettyPrint(JsonNode jsonNode)
@@ -180,6 +203,61 @@ public class Application extends Controller {
 		String basePath = Play.application().path().getAbsolutePath();
 		Path path = Paths.get(String.format("%s/backup-%s.json", basePath, type));
 		return path;
+	}
+
+	private static void tweet(String message) {
+		Logger.debug("Plain-text tweet: {}", message);
+		String encoded = net.oauth.OAuth.percentEncode(message);
+		String content = "status=" + encoded;
+		String twitterUpdateUrl =
+				"https://api.twitter.com/1.1/statuses/update.json";
+		WSRequest request = WS.url(twitterUpdateUrl)
+				.setContentType("application/x-www-form-urlencoded")
+				.setHeader(USER_AGENT, GITHUB_USER_AGENT).sign(twitterOAuth());
+		request.post(content).map(response -> {
+			JsonNode json = response.asJson();
+			Logger.info("Twitter response: {}", json.toString());
+			return json;
+		});
+	}
+
+	private static OAuthCalculator twitterOAuth() {
+		return new OAuthCalculator(
+				new ConsumerKey(CONFIG.getString("twitter.auth.consumer.key"),
+						CONFIG.getString("twitter.auth.consumer.secret")),
+				new RequestToken(CONFIG.getString("twitter.auth.access.token"),
+						CONFIG.getString("twitter.auth.access.secret")));
+	}
+
+	private static String createNewIssueTweetText(JsonNode jsonNode) {
+		String title = jsonNode.get("issue").get("title").asText();
+		String url = jsonNode.get("issue").get("html_url").asText();
+		String id = jsonNode.get("issue").get("user").get("login").asText();
+		String meta = String.format("New issue by %s: ", id);
+		String titleToTweet = shortenedIfNeeded(title, meta, 3); // 2 quotes 1 blank
+		String tweetText = String.format("%s\"%s\" ", meta, titleToTweet);
+		Logger.debug("Tweet length: {}", tweetText.length() + SHORT_LINK_LENGTH);
+		return tweetText + url;
+	}
+
+	private static String createNewCommentTweetText(JsonNode jsonNode) {
+		String url = jsonNode.get("comment").get("html_url").asText();
+		String id = jsonNode.get("comment").get("user").get("login").asText();
+		String body = jsonNode.get("comment").get("body").asText().trim();
+		String meta = String.format(": new comment by %s on ", id);
+		String bodyToTweet = shortenedIfNeeded(body, meta, 2); // 2 quotes
+		String tweetText = String.format("\"%s\"%s", bodyToTweet, meta);
+		Logger.debug("Tweet length: {}", tweetText.length() + SHORT_LINK_LENGTH);
+		return tweetText + url;
+	}
+
+	private static String shortenedIfNeeded(String text, String meta, int add) {
+		int remaining = 140 - SHORT_LINK_LENGTH - meta.length() - add;
+		String shortBody = text.substring(0, Math.min(remaining, text.length()));
+		boolean shortened = shortBody.length() < text.length();
+		String bodyToTweet = shortened
+				? (shortBody.substring(0, shortBody.length() - 3) + "...") : text;
+		return bodyToTweet;
 	}
 
 }

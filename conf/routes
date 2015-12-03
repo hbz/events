@@ -12,6 +12,8 @@ GET     /events/:type               controllers.Application.getEvents(type)
 GET     /events/:type/backup        controllers.Application.getBackup(type)
 
 # curl --header "Content-type: application/json" --header "X-GitHub-Event: issues" --request POST --data '{"repository": {"issues_url": "https://api.github.com/repos/culturegraph/metafacture-documentation/issues{/number}"}}' http://localhost:9000/events/metafacture ; echo
+# curl --header "Content-type: application/json" --header "X-GitHub-Event: issues" --request POST --data @test/sample-github-issues-event.json http://localhost:9000/events/metafacture ; echo
+# curl --header "Content-type: application/json" --header "X-GitHub-Event: issue_comment" --request POST --data @test/sample-github-issue_comment-event.json http://localhost:9000/events/metafacture ; echo
 POST    /events/:type               controllers.Application.addEvent(type)
 
 # Map static resources from the /public folder to the /assets URL path
