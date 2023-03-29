@@ -123,7 +123,7 @@ public class Application extends Controller {
 				logEvent(jsonNode, gitHubEventType);
 				backupIssues(jsonNode, type);
 				if (jsonNode.get("action").asText().equals("created")) {
-					tweet(createNewCommentTweetText(jsonNode));
+					//tweet(createNewCommentTweetText(jsonNode));
 				}
 				break;
 			default:
