@@ -7,3 +7,4 @@ bin
 /.project
 /RUNNING_PID
 backup-*.json
+monit_start.log
